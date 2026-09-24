@@ -12,3 +12,9 @@ edge_impulse/model/
 *.hex
 *.elf
 *.bin
+
+# Edge Impulse model files are too large for GitHub (float32 is ~155 MB)
+*.lite
+*.tflite
+test/output/
+test/.venv/

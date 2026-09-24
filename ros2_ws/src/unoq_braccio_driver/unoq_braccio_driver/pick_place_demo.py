@@ -1,59 +1,106 @@
-"""Vision-driven pick and place for the simulated (or real) Braccio.
+"""Camera-driven pick and place task manager.
 
-For each colour: request a detection from the overhead camera, wait for the
-averaged cube position, solve IK, pick the cube and drop it in the bin for
-that colour. Commands go out on /braccio/joint_command, so the same node
-drives Gazebo or the hardware bridge.
+The overhead camera reports where cubes and bins are. The gripper camera only
+confirms what the gripper is looking at. Each cube is taken through an explicit
+state machine and dropped in the bin that matches its colour.
 
     ros2 run unoq_braccio_driver pick_place_demo
     ros2 run unoq_braccio_driver pick_place_demo --ros-args -p colors:="[blue]"
+
+State (String) is published on /task/state and details (JSON) on /task/current.
+Commands go out on /braccio/joint_command, so the same node drives Gazebo or
+the hardware bridge.
 """
 
 import json
 import threading
 import time
+from enum import Enum
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 
+from unoq_braccio_driver import braccio_workspace as ws
 from unoq_braccio_driver.braccio_kinematics import GRIPPER_CLOSED, GRIPPER_OPEN, solve_ik
 from unoq_braccio_driver.braccio_model import JOINT_NAMES, POSES
 
-# Drop bin centres (world xy, metres); must match worlds/workspace.world.
-BINS = {
-    "red": (0.169, 0.141),
-    "blue": (0.093, 0.199),
-    "yellow": (0.0, 0.22),
-}
-CUBE_CENTRE_Z = 0.025   # fingertip height when grasping a 50 mm cube
-HOVER_Z = 0.14          # travel height above the table
-DROP_Z = 0.07           # release height above a bin
+
+class State(str, Enum):
+    IDLE = "IDLE"
+    GO_HOME = "GO_HOME"
+    DETECTING = "DETECTING"
+    TARGET_CONFIRMED = "TARGET_CONFIRMED"
+    MOVE_ABOVE_CUBE = "MOVE_ABOVE_CUBE"
+    VERIFY_CUBE = "VERIFY_CUBE"          # gripper camera sees the right colour
+    DESCEND = "DESCEND"
+    GRASP = "GRASP"
+    LIFT = "LIFT"
+    VERIFY_GRASP = "VERIFY_GRASP"        # gripper camera sees the cube held
+    MOVE_TO_BIN = "MOVE_TO_BIN"
+    LOWER = "LOWER"
+    RELEASE = "RELEASE"
+    RETREAT = "RETREAT"
+    VERIFY_PLACEMENT = "VERIFY_PLACEMENT"  # overhead camera sees it in the bin
+    COMPLETE = "COMPLETE"
+    # error states
+    DETECTION_FAILED = "DETECTION_FAILED"
+    TARGET_UNREACHABLE = "TARGET_UNREACHABLE"
+    VERIFY_FAILED = "VERIFY_FAILED"
 
 
 class PickPlaceDemo(Node):
     def __init__(self) -> None:
         super().__init__("pick_place_demo")
         self.declare_parameter("colors", ["red", "blue", "yellow"])
-        self.declare_parameter("step_wait", 2.0)     # >= joint_trajectory_bridge move_time
+        self.declare_parameter("step_wait", 2.0)      # >= joint_trajectory_bridge move_time
         self.declare_parameter("gripper_wait", 1.0)
         self.declare_parameter("detect_timeout", 6.0)
+        # False: a failed gripper-camera check only warns. True: it aborts the cube.
+        self.declare_parameter("strict_gripper_verify", False)
+        self.declare_parameter("min_grasp_area_frac", 0.02)
 
         self.command = self.create_publisher(JointState, "/braccio/joint_command", 10)
         self.request = self.create_publisher(String, "/vision/detect_request", 10)
-        self.create_subscription(String, "/vision/cube_target", self.on_target, 10)
-        self.target = None
-        self.target_event = threading.Event()
+        self.gripper_request = self.create_publisher(String, "/vision/gripper/detect_request", 10)
+        self.state_pub = self.create_publisher(String, "/task/state", 10)
+        self.current_pub = self.create_publisher(String, "/task/current", 10)
+        self.create_subscription(String, "/vision/cube_target", self.on_overhead, 10)
+        self.create_subscription(String, "/vision/gripper/detection", self.on_gripper, 10)
 
-    def on_target(self, msg: String) -> None:
+        self.overhead = None
+        self.overhead_event = threading.Event()
+        self.gripper = None
+        self.gripper_event = threading.Event()
+        self.state = State.IDLE
+        self.current = {}
+        self.slot_used = {}
+        self.publish_state(State.IDLE)
+
+    # -- I/O ---------------------------------------------------------
+
+    def on_overhead(self, msg: String) -> None:
         try:
-            self.target = json.loads(msg.data).get("cubes", {})
+            self.overhead = json.loads(msg.data)
         except json.JSONDecodeError:
-            self.target = {}
-        self.target_event.set()
+            self.overhead = {"cubes": [], "bins": {}}
+        self.overhead_event.set()
 
-    # -- helpers -------------------------------------------------------
+    def on_gripper(self, msg: String) -> None:
+        try:
+            self.gripper = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.gripper = {"colors": {}}
+        self.gripper_event.set()
+
+    def publish_state(self, state: State, **details) -> None:
+        self.state = state
+        self.current.update(details)
+        self.current["state"] = state.value
+        self.state_pub.publish(String(data=state.value))
+        self.current_pub.publish(String(data=json.dumps(self.current)))
+        self.get_logger().info(f"[{state.value}] {details or ''}")
 
     def move(self, pose, wait=None) -> None:
         msg = JointState()
@@ -66,69 +113,147 @@ class PickPlaceDemo(Node):
     def ik(self, x, y, z, gripper):
         pose = solve_ik(x, y, z, gripper)
         if pose is None:
-            raise RuntimeError(f"Unreachable target ({x:.3f}, {y:.3f}, {z:.3f})")
+            raise ValueError(f"unreachable target ({x:.3f}, {y:.3f}, {z:.3f})")
         return pose
 
-    def detect(self, color: str):
-        timeout = float(self.get_parameter("detect_timeout").value)
-        self.target_event.clear()
+    def overhead_scan(self, color: str = ""):
+        """Ask the overhead camera for cubes and bins; None on timeout."""
+        self.overhead_event.clear()
         self.request.publish(String(data=color))
-        if not self.target_event.wait(timeout):
+        if not self.overhead_event.wait(float(self.get_parameter("detect_timeout").value)):
             return None
-        return (self.target or {}).get(color)
+        return self.overhead
 
-    # -- sequence ------------------------------------------------------
+    def gripper_look(self, color: str):
+        """Ask the gripper camera what it sees of ``color``; None on timeout."""
+        self.gripper_event.clear()
+        self.gripper_request.publish(String(data=color))
+        if not self.gripper_event.wait(float(self.get_parameter("detect_timeout").value)):
+            return None
+        return (self.gripper or {}).get("colors", {}).get(color)
 
-    def pick_and_place(self, color: str) -> bool:
+    def gripper_check(self, state: State, color: str, min_frac: float) -> bool:
+        """Gripper-camera confirmation. Only aborts when strict_gripper_verify."""
+        seen = self.gripper_look(color)
+        ok = seen is not None and seen["area_frac"] >= min_frac
+        self.publish_state(state, gripper_seen=seen, gripper_ok=ok)
+        if ok:
+            return True
+        self.get_logger().warning(f"Gripper camera did not confirm {color} ({state.value})")
+        return not bool(self.get_parameter("strict_gripper_verify").value)
+
+    # -- one cube ------------------------------------------------------
+
+    def bin_target(self, cube_color: str, scan: dict):
+        """Bin centre: overhead camera position when seen, workspace layout otherwise."""
+        bin_ = ws.BIN_BY_CUBE_COLOR[cube_color]
+        seen = (scan or {}).get("bins", {}).get(bin_.name)
+        cx, cy = (seen["x"], seen["y"]) if seen else bin_.centre
+        slot = self.slot_used.get(bin_.name, 0)
+        self.slot_used[bin_.name] = slot + 1
+        dx, dy = ws.BIN_SLOT_OFFSETS[slot % len(ws.BIN_SLOT_OFFSETS)]
+        return bin_, cx + dx, cy + dy
+
+    def handle_cube(self, cube: dict, scan: dict) -> bool:
+        color, x, y = cube["color"], cube["x"], cube["y"]
+        grasp_frac = float(self.get_parameter("min_grasp_area_frac").value)
         grip_wait = float(self.get_parameter("gripper_wait").value)
-        found = self.detect(color)
-        if found is None:
-            self.get_logger().warning(f"No {color} cube detected; skipping")
-            return False
-        x, y = found["x"], found["y"]
-        self.get_logger().info(
-            f"{color}: cube at ({x:.3f}, {y:.3f}) confidence {found['confidence']:.2f}"
+        self.publish_state(
+            State.TARGET_CONFIRMED, cube=color, x=round(x, 4), y=round(y, 4),
+            confidence=round(cube["confidence"], 2),
         )
-        bin_x, bin_y = BINS[color]
 
-        above = self.ik(x, y, HOVER_Z, GRIPPER_OPEN)
-        down = self.ik(x, y, CUBE_CENTRE_Z, GRIPPER_OPEN)
-        grip = self.ik(x, y, CUBE_CENTRE_Z, GRIPPER_CLOSED)
-        lift = self.ik(x, y, HOVER_Z, GRIPPER_CLOSED)
-        over_bin = self.ik(bin_x, bin_y, HOVER_Z, GRIPPER_CLOSED)
-        into_bin = self.ik(bin_x, bin_y, DROP_Z, GRIPPER_CLOSED)
-        release = self.ik(bin_x, bin_y, DROP_Z, GRIPPER_OPEN)
-        retreat = self.ik(bin_x, bin_y, HOVER_Z, GRIPPER_OPEN)
+        bin_, bx, by = self.bin_target(color, scan)
+        try:
+            above = self.ik(x, y, ws.HOVER_Z, GRIPPER_OPEN)
+            down = self.ik(x, y, ws.CUBE_CENTRE_Z, GRIPPER_OPEN)
+            grip = self.ik(x, y, ws.CUBE_CENTRE_Z, GRIPPER_CLOSED)
+            lift = self.ik(x, y, ws.HOVER_Z, GRIPPER_CLOSED)
+            over_bin = self.ik(bx, by, ws.HOVER_Z, GRIPPER_CLOSED)
+            into_bin = self.ik(bx, by, ws.release_z(bin_), GRIPPER_CLOSED)
+            release = self.ik(bx, by, ws.release_z(bin_), GRIPPER_OPEN)
+            retreat = self.ik(bx, by, ws.HOVER_Z, GRIPPER_OPEN)
+        except ValueError as exc:
+            self.publish_state(State.TARGET_UNREACHABLE, error=str(exc))
+            return False
 
+        self.publish_state(State.MOVE_ABOVE_CUBE, bin=bin_.name)
         self.move(above)
+
+        if not self.gripper_check(State.VERIFY_CUBE, color, min_frac=0.0005):
+            self.publish_state(State.VERIFY_FAILED, error="gripper camera: cube not seen")
+            return False
+
+        self.publish_state(State.DESCEND)
         self.move(down)
+        self.publish_state(State.GRASP)
         self.move(grip, wait=grip_wait)
+        self.publish_state(State.LIFT)
         self.move(lift)
+
+        if not self.gripper_check(State.VERIFY_GRASP, color, min_frac=grasp_frac):
+            self.publish_state(State.VERIFY_FAILED, error="gripper camera: cube not held")
+            self.move(self.ik(x, y, ws.HOVER_Z, GRIPPER_OPEN))
+            return False
+
+        self.publish_state(State.MOVE_TO_BIN, bin=bin_.name, bin_x=round(bx, 4), bin_y=round(by, 4))
         self.move(over_bin)
+        self.publish_state(State.LOWER)
         self.move(into_bin)
+        self.publish_state(State.RELEASE)
         self.move(release, wait=grip_wait)
+        self.publish_state(State.RETREAT)
         self.move(retreat)
         return True
 
-    def run(self) -> None:
-        # Let the publishers and detector discover each other.
-        time.sleep(1.0)
-        ready = list(POSES["ready"])
-        ready[5] = GRIPPER_OPEN
-        self.move(ready)
+    # -- whole task ------------------------------------------------------
 
-        done = []
-        for color in [str(c).lower() for c in self.get_parameter("colors").value]:
-            if color not in BINS:
-                self.get_logger().error(f"No bin defined for '{color}'")
-                continue
+    def run(self) -> None:
+        time.sleep(1.0)  # let publishers and detectors discover each other
+        wanted = [str(c).lower() for c in self.get_parameter("colors").value]
+        home = list(POSES["ready"])
+        home[5] = GRIPPER_OPEN
+
+        self.publish_state(State.GO_HOME)
+        self.move(home)
+
+        self.publish_state(State.DETECTING)
+        scan = self.overhead_scan()
+        if scan is None:
+            self.publish_state(State.DETECTION_FAILED, error="no overhead result")
+            return
+        todo = [
+            c for c in scan["cubes"]
+            if c["sector"] == "pick" and c["color"] in wanted and c["color"] in ws.BIN_BY_CUBE_COLOR
+        ]
+        if not todo:
+            self.publish_state(State.DETECTION_FAILED, error="no cubes in the pick sector")
+            return
+
+        placed = []
+        for cube in sorted(todo, key=lambda c: c["y"]):
             try:
-                if self.pick_and_place(color):
-                    done.append(color)
-            except RuntimeError as exc:
-                self.get_logger().error(str(exc))
-        self.move(ready)
-        self.get_logger().info(f"Finished. Placed: {', '.join(done) or 'nothing'}")
+                if self.handle_cube(cube, scan):
+                    placed.append(cube["color"])
+            except Exception as exc:  # keep going with the next cube
+                self.get_logger().error(f"{cube['color']}: {exc}")
+            self.publish_state(State.GO_HOME)
+            self.move(home)
+
+        self.publish_state(State.VERIFY_PLACEMENT, expected=placed)
+        final = self.overhead_scan()
+        bad = []
+        if final is not None:
+            for color in placed:
+                target = ws.BIN_BY_CUBE_COLOR[color].name
+                if not any(
+                    c["color"] == color and c["sector"] == target for c in final["cubes"]
+                ):
+                    bad.append(color)
+        if bad:
+            self.publish_state(State.VERIFY_FAILED, error=f"not in bin: {bad}")
+        else:
+            self.publish_state(State.COMPLETE, placed=placed)
 
 
 def main() -> None:

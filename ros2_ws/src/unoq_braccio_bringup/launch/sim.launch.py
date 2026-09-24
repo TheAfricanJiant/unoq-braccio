@@ -13,11 +13,13 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("fallback_sim", default_value="false"),
             DeclareLaunchArgument("detector", default_value="true"),
+            DeclareLaunchArgument("rviz", default_value="true"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(sim_launch),
                 launch_arguments={
                     "fallback_sim": LaunchConfiguration("fallback_sim"),
                     "detector": LaunchConfiguration("detector"),
+                    "rviz": LaunchConfiguration("rviz"),
                 }.items(),
             ),
         ]

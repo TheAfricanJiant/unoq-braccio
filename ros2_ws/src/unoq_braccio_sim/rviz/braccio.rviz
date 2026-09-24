@@ -1,0 +1,93 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Workspace1
+        - /Cameras1
+      Splitter Ratio: 0.5
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Enabled: true
+      Cell Size: 0.05
+      Plane Cell Count: 16
+      Color: 160; 160; 164
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Enabled: true
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Depth: 5
+        Durability Policy: Transient Local
+        Reliability Policy: Reliable
+      Visual Enabled: true
+      Collision Enabled: false
+      Alpha: 1
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Enabled: false
+      Marker Scale: 0.1
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Workspace
+      Enabled: true
+      Topic:
+        Value: /workspace/markers
+        Depth: 5
+        Durability Policy: Volatile
+        Reliability Policy: Reliable
+    - Class: rviz_common/Group
+      Name: Cameras
+      Enabled: true
+      Displays:
+        - Class: rviz_default_plugins/Image
+          Name: Overhead camera
+          Enabled: true
+          Topic:
+            Value: /vision/overhead/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Normalize Range: true
+        - Class: rviz_default_plugins/Image
+          Name: Gripper camera
+          Enabled: true
+          Topic:
+            Value: /vision/gripper/image_raw
+            Depth: 5
+            Durability Policy: Volatile
+            Reliability Policy: Reliable
+          Normalize Range: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: world
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Target Frame: world
+      Distance: 0.9
+      Focal Point:
+        X: 0.15
+        Y: 0.05
+        Z: 0.1
+      Pitch: 0.9
+      Yaw: -2.2
+      Value: Orbit (rviz)
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 900
+  Width: 1400

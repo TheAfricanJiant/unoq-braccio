@@ -41,7 +41,8 @@ This repository contains:
 - ROS 2 USB serial and remote TCP bridges that convert
   `sensor_msgs/JointState` commands into Braccio servo angles.
 - A Gazebo/ros2_control simulation with a gripper camera, an overhead camera,
-  colored blocks and drop bins, and a vision-driven pick-and-place demo.
+  30 mm colored cubes and drop bins, RViz, and a camera-driven pick-and-place
+  demo.
 - Edge Impulse integration for camera object detection and classifier-driven
   arm poses, plus CSV data capture of commanded servo motion.
 - USB camera vision with OpenCV color tracking.
@@ -202,18 +203,25 @@ ros2 run unoq_braccio_driver ik_pose_demo --ros-args \
   -p x:=0.30 -p y:=0.00 -p z:=0.06 -p gripper:=25
 ```
 
-**Vision-driven pick and place.** The overhead camera finds each block, IK
-picks it, and the arm drops it in the bin of the same color:
+**Camera-driven pick and place.** The overhead camera reports where the 30 mm
+cubes and the bins are, the gripper camera only confirms what it sees, and each
+cube is taken through a state machine into the bin for its color (red cube to
+the green bin, blue to cyan, yellow to magenta):
 
 ```bash
 ros2 run unoq_braccio_driver pick_place_demo
 ros2 run unoq_braccio_driver pick_place_demo --ros-args -p colors:="[blue]"
+ros2 topic echo /task/state       # IDLE, DETECTING, GRASP, ... COMPLETE
 ```
+
+RViz opens with the launch (robot, both camera feeds, sectors, detected cubes
+and task state). Use `rviz:=false` to skip it.
 
 **Launch options:**
 
 ```bash
-ros2 launch unoq_braccio_bringup sim.launch.py detector:=false      # no cube detector
+ros2 launch unoq_braccio_bringup sim.launch.py detector:=false      # no cameras' detectors
+ros2 launch unoq_braccio_bringup sim.launch.py rviz:=false          # Gazebo only
 ros2 launch unoq_braccio_bringup sim.launch.py fallback_sim:=true   # debug only
 ```
 
@@ -222,7 +230,10 @@ ros2 launch unoq_braccio_bringup sim.launch.py fallback_sim:=true   # debug only
 ```text
 /vision/overhead/image_raw   fixed overhead camera
 /vision/gripper/image_raw    gripper-mounted camera
-/vision/cube_target          averaged cube positions (JSON)
+/vision/cube_target          overhead detections: cube + bin positions (JSON)
+/vision/gripper/detection    gripper camera colour check (JSON, no positions)
+/task/state                  task state machine
+/workspace/markers           RViz markers
 ```
 
 ```bash
@@ -230,8 +241,10 @@ ros2 topic hz /clock              # arm not moving? the sim clock must be runnin
 ros2 control list_controllers
 ```
 
-The scene has red, blue and yellow 50 mm blocks and matching drop bins, all
-within the arm's reach. Details, servo conventions and current limitations are
+The scene has red, blue and yellow 30 mm cubes and green, cyan and magenta bins
+(different from the cube colors so the camera cannot confuse them), all within
+the arm's reach. Check the layout without ROS or Gazebo with
+`python ros2_ws/src/unoq_braccio_driver/test/test_workspace.py`. Details, servo conventions and current limitations are
 in [ros2_ws/src/unoq_braccio_sim/README.md](ros2_ws/src/unoq_braccio_sim/README.md).
 
 ## Command Protocol

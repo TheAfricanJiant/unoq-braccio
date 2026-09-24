@@ -14,6 +14,8 @@ from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitut
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
+from unoq_braccio_driver.braccio_workspace import CAMERA_XYZ
+
 
 def generate_launch_description():
     share = get_package_share_directory("unoq_braccio_sim")
@@ -40,6 +42,10 @@ def generate_launch_description():
         "fallback_sim", default_value="false",
         description="Also run joint_state_simulator. Only for debugging without "
         "controllers: it publishes /joint_states and fights the broadcaster.",
+    )
+    rviz_arg = DeclareLaunchArgument(
+        "rviz", default_value="true",
+        description="Open RViz with the robot, cameras and workspace markers.",
     )
     detector = DeclareLaunchArgument(
         "detector", default_value="true",
@@ -132,9 +138,46 @@ def generate_launch_description():
         output="screen",
     )
 
+    gripper_detector = Node(
+        package="unoq_braccio_driver",
+        executable="sim_gripper_detector",
+        name="sim_gripper_detector",
+        parameters=[sim_time],
+        condition=IfCondition(LaunchConfiguration("detector")),
+        output="screen",
+    )
+    markers = Node(
+        package="unoq_braccio_driver",
+        executable="workspace_markers",
+        name="workspace_markers",
+        parameters=[sim_time],
+        condition=IfCondition(LaunchConfiguration("rviz")),
+        output="screen",
+    )
+    # The overhead camera is fixed in the world; publish it so RViz can show it.
+    cam_x, cam_y, cam_z = CAMERA_XYZ
+    camera_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments=["--x", str(cam_x), "--y", str(cam_y), "--z", str(cam_z),
+                   "--roll", "0", "--pitch", "1.5708", "--yaw", "0",
+                   "--frame-id", "world", "--child-frame-id", "overhead_camera"],
+        parameters=[sim_time],
+        condition=IfCondition(LaunchConfiguration("rviz")),
+    )
+    rviz = Node(
+        package="rviz2",
+        executable="rviz2",
+        arguments=["-d", os.path.join(share, "rviz", "braccio.rviz")],
+        parameters=[sim_time],
+        condition=IfCondition(LaunchConfiguration("rviz")),
+        output="screen",
+    )
+
     return LaunchDescription(
         [
             fallback_sim,
+            rviz_arg,
             detector,
             gz_sim,
             bridge,
@@ -151,5 +194,9 @@ def generate_launch_description():
             trajectory_bridge,
             joint_state_simulator,
             cube_detector,
+            gripper_detector,
+            markers,
+            camera_tf,
+            rviz,
         ]
     )

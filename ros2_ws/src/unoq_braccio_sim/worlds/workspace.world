@@ -3,8 +3,8 @@
   Braccio workspace: table, three pick blocks, three colour drop bins and a
   fixed overhead camera. The arm is spawned at the origin facing +x.
 
-  Overhead camera pose (0.20, -0.02, 0.80) looking straight down must match the
-  defaults in unoq_braccio_driver/sim_cube_detector.py.
+  Overhead camera pose (0.20, 0.0, 0.60) looking straight down must match
+  CAMERA_XYZ / CAMERA_HFOV in unoq_braccio_driver/braccio_workspace.py.
 -->
 <sdf version="1.9">
   <world name="default">
@@ -51,91 +51,100 @@
       </link>
     </model>
 
-    <!-- Pick blocks: 50 mm cubes, one row at x = 0.21 -->
-    <model name="red_block">
-      <pose>0.21 -0.10 0.025 0 0 0</pose>
+    <!--
+      Layout comes from unoq_braccio_driver/braccio_workspace.py; keep them in
+      sync (test/test_workspace.py checks it).
+
+      30 mm cubes start in the pick sector. Bins are green / cyan / magenta so
+      they can never be mistaken for the red / blue / yellow cubes.
+    -->
+    <model name="red_cube">
+      <pose>0.2 -0.15 0.015 0 0 0</pose>
       <link name="link">
         <inertial>
-          <mass>0.04</mass>
-          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+          <mass>0.02</mass>
+          <inertia><ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz></inertia>
         </inertial>
         <collision name="collision">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <material><ambient>1 0.05 0.05 1</ambient><diffuse>1 0.05 0.05 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <model name="blue_block">
-      <pose>0.21 -0.02 0.025 0 0 0</pose>
+    <model name="blue_cube">
+      <pose>0.2 -0.08 0.015 0 0 0</pose>
       <link name="link">
         <inertial>
-          <mass>0.04</mass>
-          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+          <mass>0.02</mass>
+          <inertia><ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz></inertia>
         </inertial>
         <collision name="collision">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <material><ambient>0.05 0.2 1 1</ambient><diffuse>0.05 0.2 1 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <model name="yellow_block">
-      <pose>0.21 0.06 0.025 0 0 0</pose>
+    <model name="yellow_cube">
+      <pose>0.2 -0.01 0.015 0 0 0</pose>
       <link name="link">
         <inertial>
-          <mass>0.04</mass>
-          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+          <mass>0.02</mass>
+          <inertia><ixx>3e-6</ixx><iyy>3e-6</iyy><izz>3e-6</izz></inertia>
         </inertial>
         <collision name="collision">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
         </collision>
         <visual name="visual">
-          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
           <material><ambient>1 0.85 0.05 1</ambient><diffuse>1 0.85 0.05 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <!-- Drop bins on an arc of radius 0.22 m around the arm base (inside reach) -->
-    <model name="drop_red_bin">
+    <!-- Bins on an arc of radius 0.24 m around the arm base (inside reach) -->
+    <model name="bin_green">
       <static>true</static>
-      <pose>0.169 0.141 0.008 0 0 0</pose>
+      <pose>0.2255 0.082 0.01 0 0 0</pose>
       <link name="link">
+        <collision name="collision"><geometry><box><size>0.08 0.08 0.02</size></box></geometry></collision>
         <visual name="visual">
-          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
-          <material><ambient>0.9 0.1 0.1 1</ambient><diffuse>0.9 0.1 0.1 1</diffuse></material>
+          <geometry><box><size>0.08 0.08 0.02</size></box></geometry>
+          <material><ambient>0.1 0.75 0.2 1</ambient><diffuse>0.1 0.75 0.2 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <model name="drop_blue_bin">
+    <model name="bin_cyan">
       <static>true</static>
-      <pose>0.093 0.199 0.008 0 0 0</pose>
+      <pose>0.154 0.184 0.01 0 0 0</pose>
       <link name="link">
+        <collision name="collision"><geometry><box><size>0.08 0.08 0.02</size></box></geometry></collision>
         <visual name="visual">
-          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
-          <material><ambient>0.1 0.2 0.9 1</ambient><diffuse>0.1 0.2 0.9 1</diffuse></material>
+          <geometry><box><size>0.08 0.08 0.02</size></box></geometry>
+          <material><ambient>0.0 0.8 0.8 1</ambient><diffuse>0.0 0.8 0.8 1</diffuse></material>
         </visual>
       </link>
     </model>
 
-    <model name="drop_yellow_bin">
+    <model name="bin_magenta">
       <static>true</static>
-      <pose>0.0 0.22 0.008 0 0 0</pose>
+      <pose>0.0417 0.236 0.01 0 0 0</pose>
       <link name="link">
+        <collision name="collision"><geometry><box><size>0.08 0.08 0.02</size></box></geometry></collision>
         <visual name="visual">
-          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
-          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+          <geometry><box><size>0.08 0.08 0.02</size></box></geometry>
+          <material><ambient>0.85 0.1 0.8 1</ambient><diffuse>0.85 0.1 0.8 1</diffuse></material>
         </visual>
       </link>
     </model>
@@ -143,7 +152,7 @@
     <!-- Fixed overhead camera looking straight down at the workspace -->
     <model name="overhead_camera">
       <static>true</static>
-      <pose>0.20 -0.02 0.80 0 1.5708 0</pose>
+      <pose>0.20 0.0 0.60 0 1.5708 0</pose>
       <link name="link">
         <visual name="body">
           <geometry><box><size>0.03 0.03 0.02</size></box></geometry>
@@ -155,7 +164,7 @@
           <visualize>false</visualize>
           <topic>overhead_camera/image_raw</topic>
           <camera>
-            <horizontal_fov>1.2</horizontal_fov>
+            <horizontal_fov>1.0</horizontal_fov>
             <image><width>640</width><height>480</height><format>R8G8B8</format></image>
             <clip><near>0.05</near><far>3.0</far></clip>
           </camera>

@@ -1,0 +1,166 @@
+<?xml version="1.0"?>
+<!--
+  Braccio workspace: table, three pick blocks, three colour drop bins and a
+  fixed overhead camera. The arm is spawned at the origin facing +x.
+
+  Overhead camera pose (0.20, -0.02, 0.80) looking straight down must match the
+  defaults in unoq_braccio_driver/sim_cube_detector.py.
+-->
+<sdf version="1.9">
+  <world name="default">
+    <physics name="sim_physics" type="ignored">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <!-- Without these systems Gazebo neither steps physics nor renders cameras. -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.8 0.85 0.9 1</background>
+    </scene>
+
+    <light name="sun" type="directional">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>4 4</size></plane></geometry>
+          <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>4 4</size></plane></geometry>
+          <material>
+            <ambient>0.72 0.76 0.8 1</ambient>
+            <diffuse>0.72 0.76 0.8 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Pick blocks: 50 mm cubes, one row at x = 0.21 -->
+    <model name="red_block">
+      <pose>0.21 -0.10 0.025 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.04</mass>
+          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>1 0.05 0.05 1</ambient><diffuse>1 0.05 0.05 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="blue_block">
+      <pose>0.21 -0.02 0.025 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.04</mass>
+          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>0.05 0.2 1 1</ambient><diffuse>0.05 0.2 1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="yellow_block">
+      <pose>0.21 0.06 0.025 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.04</mass>
+          <inertia><ixx>1.7e-5</ixx><iyy>1.7e-5</iyy><izz>1.7e-5</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <surface><friction><ode><mu>1.5</mu><mu2>1.5</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.05 0.05 0.05</size></box></geometry>
+          <material><ambient>1 0.85 0.05 1</ambient><diffuse>1 0.85 0.05 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Drop bins on an arc of radius 0.22 m around the arm base (inside reach) -->
+    <model name="drop_red_bin">
+      <static>true</static>
+      <pose>0.169 0.141 0.008 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
+          <material><ambient>0.9 0.1 0.1 1</ambient><diffuse>0.9 0.1 0.1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="drop_blue_bin">
+      <static>true</static>
+      <pose>0.093 0.199 0.008 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
+          <material><ambient>0.1 0.2 0.9 1</ambient><diffuse>0.1 0.2 0.9 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="drop_yellow_bin">
+      <static>true</static>
+      <pose>0.0 0.22 0.008 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.08 0.08 0.016</size></box></geometry>
+          <material><ambient>0.95 0.75 0.05 1</ambient><diffuse>0.95 0.75 0.05 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Fixed overhead camera looking straight down at the workspace -->
+    <model name="overhead_camera">
+      <static>true</static>
+      <pose>0.20 -0.02 0.80 0 1.5708 0</pose>
+      <link name="link">
+        <visual name="body">
+          <geometry><box><size>0.03 0.03 0.02</size></box></geometry>
+          <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+        </visual>
+        <sensor name="overhead_camera" type="camera">
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <visualize>false</visualize>
+          <topic>overhead_camera/image_raw</topic>
+          <camera>
+            <horizontal_fov>1.2</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>3.0</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+  </world>
+</sdf>

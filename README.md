@@ -177,16 +177,28 @@ Then send the same demo poses:
 ros2 run unoq_braccio_driver pose_demo --ros-args -p pose:=wave
 ```
 
-The Gazebo package models all six Braccio command joints, the gripper-mounted
-camera body, red/blue/yellow pick blocks, and colored drop zones. See
+The Gazebo package models all six Braccio command joints, a gripper-mounted
+camera, a fixed overhead camera, red/blue/yellow pick blocks, and colored drop
+bins. See
 [ros2_ws/src/unoq_braccio_sim/README.md](ros2_ws/src/unoq_braccio_sim/README.md).
 
-For a simple target-position test inspired by Braccio pick/drop simulators:
+Move the end effector to an x/y/z target (metres, arm base at the origin,
+facing +x):
 
 ```bash
-ros2 run unoq_braccio_driver ik_pose_demo --ros-args \
-  -p x:=0.30 -p y:=0.00 -p z:=0.06 -p gripper:=25
+ros2 run unoq_braccio_driver ik_pose_demo --ros-args   -p x:=0.30 -p y:=0.00 -p z:=0.06 -p gripper:=25
 ```
+
+Run the full vision-driven pick and place (the overhead camera finds each
+block, IK picks it, and the arm drops it in the bin of the same colour):
+
+```bash
+ros2 run unoq_braccio_driver pick_place_demo
+ros2 run unoq_braccio_driver pick_place_demo --ros-args -p colors:="[blue]"
+```
+
+Camera feeds are bridged to `/vision/overhead/image_raw` and
+`/vision/gripper/image_raw`.
 
 ## Command Protocol
 

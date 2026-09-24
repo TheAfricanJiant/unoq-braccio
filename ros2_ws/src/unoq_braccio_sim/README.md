@@ -6,18 +6,17 @@ Braccio project.
 It includes:
 
 - Six Braccio command joints: `base`, `shoulder`, `elbow`, `wrist_vertical`,
-  `wrist_rotation`, and `gripper`.
+  `wrist_rotation`, and `gripper` (plus a mirrored `left_gripper` finger that
+  the trajectory bridge drives).
 - Visual STL meshes for the Braccio base, links, wrist, and gripper, adapted
   from Will Stedden's GPL-3.0 Braccio MoveIt/Gazebo package.
-- A simple gripper-mounted camera body matching the real camera position above
-  and between the fingers.
-- Red, blue, and yellow pick blocks.
-- Three colored drop zones.
+- A gripper-mounted camera (`/vision/gripper/image_raw`) looking along the
+  gripper, and a fixed overhead camera (`/vision/overhead/image_raw`).
+- Red, blue, and yellow pick blocks and three colored drop bins, all inside
+  the arm's reach.
 - `ros2_control` metadata and controller configuration.
-- A joint-state simulator fallback so `/braccio/joint_command` pose demos can
-  move the model even without a full controller command bridge.
-- A joint trajectory bridge that republishes `/braccio/joint_command` to
-  `/arm_controller/joint_trajectory` for Gazebo controller use.
+- A `ros_gz_bridge` for `/clock` and both camera streams.
+- `sim_cube_detector`: request-driven cube detection on the overhead camera.
 
 ## Install Dependencies
 
@@ -48,25 +47,35 @@ source install/setup.bash
 ros2 launch unoq_braccio_bringup sim.launch.py
 ```
 
-Then publish a pose:
+Then, in another terminal:
 
 ```bash
 ros2 run unoq_braccio_driver pose_demo --ros-args -p pose:=ready
-ros2 run unoq_braccio_driver pose_demo --ros-args -p pose:=pickup
 ros2 run unoq_braccio_driver pose_demo --ros-args -p pose:=wave
+ros2 run unoq_braccio_driver ik_pose_demo --ros-args   -p x:=0.30 -p y:=0.00 -p z:=0.06 -p gripper:=25
+ros2 run unoq_braccio_driver pick_place_demo
 ```
 
-You can also publish a simple x/y/z target through a constrained Braccio IK
-helper:
+Launch arguments: `detector:=false` skips the cube detector;
+`fallback_sim:=true` also runs `joint_state_simulator` (debug only, it fights
+the controller's `/joint_states`).
+
+If the arm does not move, check the clock first. Every node runs with
+`use_sim_time`, so nothing advances without `/clock`:
 
 ```bash
-ros2 run unoq_braccio_driver ik_pose_demo --ros-args \
-  -p x:=0.30 -p y:=0.00 -p z:=0.06 -p gripper:=25
+ros2 topic hz /clock
+ros2 control list_controllers
 ```
 
-The helper uses a deliberately small 2D planar IK calculation for the shoulder,
-elbow, and wrist, plus base rotation from `atan2(y, x)`. It is meant for quick
-simulation targets and reach testing, not final calibrated motion planning.
+## Servo convention
+
+`ready` (90, 90, 90, 90, 90) is the arm standing straight up; base 90 faces
++x. The URDF joint zeros differ, so `braccio_kinematics.servo_to_urdf`
+converts, and `braccio_kinematics.solve_ik` is checked against the URDF chain
+(`forward_kinematics`) to a few millimetres. This convention is assumed for
+the physical arm too; verify shoulder/elbow directions on hardware before
+trusting IK poses there.
 
 ## Current Scope
 
@@ -75,11 +84,9 @@ dimensions and inertias are approximate. The pick blocks and bins are there for
 vision and workflow testing; grasp physics still needs tuning before relying on
 it for realistic pick-and-place contact.
 
-The launch starts both the controller bridge and the joint-state simulator. If
-`gz_ros2_control` is available, the controller path drives
-`/arm_controller/joint_trajectory`. If controller startup fails, the
-joint-state simulator still publishes `/joint_states` so the model follows
-project pose commands for visual testing.
+Grasp physics (finger friction on a 50 mm block) has not been tuned; if a
+block slips, adjust the finger geometry or `GRIPPER_CLOSED` in
+`braccio_kinematics.py`.
 
 ## Reference
 

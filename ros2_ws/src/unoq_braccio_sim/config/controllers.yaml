@@ -1,5 +1,6 @@
 controller_manager:
   ros__parameters:
+    use_sim_time: true
     update_rate: 50
 
     joint_state_broadcaster:
@@ -10,6 +11,7 @@ controller_manager:
 
 arm_controller:
   ros__parameters:
+    use_sim_time: true
     joints:
       - base
       - shoulder
@@ -17,8 +19,13 @@ arm_controller:
       - wrist_vertical
       - wrist_rotation
       - gripper
+      - left_gripper
     command_interfaces:
       - position
     state_interfaces:
       - position
       - velocity
+    allow_nonzero_velocity_at_trajectory_end: true
+    constraints:
+      stopped_velocity_tolerance: 0.5
+      goal_time: 3.0

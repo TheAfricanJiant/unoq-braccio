@@ -1,0 +1,179 @@
+"""Braccio kinematics shared by the simulator, IK helpers and pick/place demo.
+
+Pure Python (no ROS, no numpy) so it can be unit-tested anywhere.
+
+Servo convention (degrees, matches the firmware and ``braccio_model``):
+
+* ``base``            90 faces forward (+x); larger values turn left (+y).
+* ``shoulder``        90 is vertical; larger values lean the upper arm forward.
+* ``elbow``           90 is straight; larger values fold the forearm forward/down.
+* ``wrist_vertical``  90 is straight; larger values fold the gripper forward/down.
+* ``wrist_rotation``  90 is centred.
+* ``gripper``         10 is open, 110 is fully closed.
+
+``ready`` (90, 90, 90, 90, 90) is therefore the arm standing straight up.
+The URDF joint zeros are not the servo zeros, so the simulator converts with
+:func:`servo_to_urdf`. ``URDF_CHAIN`` mirrors ``braccio.urdf.xacro`` and is used
+by :func:`forward_kinematics` to check the IK against the real geometry.
+"""
+
+import math
+
+# Geometry taken from braccio.urdf.xacro (metres).
+BASE_HEIGHT = 0.03          # world -> braccio_base_link origin
+SHOULDER_RADIAL = -0.002    # shoulder axis, radial offset from the base axis
+SHOULDER_HEIGHT = 0.102     # shoulder axis height above the ground
+UPPER_ARM = 0.125
+FOREARM = 0.125
+WRIST_LINK = 0.06           # wrist_vertical axis -> wrist_roll origin
+TIP_LENGTH = 0.10           # wrist_roll origin -> fingertip (approximate)
+TOOL_LENGTH = WRIST_LINK + TIP_LENGTH
+
+GRIPPER_OPEN = 10
+GRIPPER_CLOSED = 95         # closes on a 50 mm block; 110 is fully shut
+
+# Gripper joint range in the URDF and the mirrored left finger.
+GRIPPER_RAD_MIN = 0.1750
+GRIPPER_RAD_MAX = 1.2741
+LEFT_GRIPPER_OFFSET = GRIPPER_RAD_MIN + GRIPPER_RAD_MAX  # left = offset - right
+
+URDF_ARM_JOINTS = ["base", "shoulder", "elbow", "wrist_vertical", "wrist_rotation"]
+URDF_JOINT_NAMES = URDF_ARM_JOINTS + ["gripper", "left_gripper"]
+
+
+def servo_to_urdf(name: str, value: float) -> float:
+    """Servo degrees -> URDF joint position in radians."""
+    value = float(value)
+    if name in ("shoulder", "elbow", "wrist_vertical"):
+        return math.radians(180.0 - value)
+    if name in ("base", "wrist_rotation"):
+        return math.radians(value - 90.0)
+    if name == "gripper":
+        span = GRIPPER_RAD_MAX - GRIPPER_RAD_MIN
+        return GRIPPER_RAD_MIN + max(0.0, min(1.0, (value - 10.0) / 100.0)) * span
+    if name == "left_gripper":
+        return LEFT_GRIPPER_OFFSET - servo_to_urdf("gripper", value)
+    raise KeyError(name)
+
+
+def servo_positions_to_urdf(values_by_name: dict) -> list:
+    """Full URDF joint vector (including the mirrored finger) for the six servos."""
+    return [
+        servo_to_urdf(
+            name,
+            values_by_name["gripper" if name == "left_gripper" else name],
+        )
+        for name in URDF_JOINT_NAMES
+    ]
+
+
+# --- forward kinematics straight from the URDF joint chain -----------------
+
+def _rpy(r, p, y):
+    cr, sr = math.cos(r), math.sin(r)
+    cp, sp = math.cos(p), math.sin(p)
+    cy, sy = math.cos(y), math.sin(y)
+    return [
+        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+        [-sp, cp * sr, cp * cr],
+    ]
+
+
+def _matmul(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _matvec(a, v):
+    return [sum(a[i][k] * v[k] for k in range(3)) for i in range(3)]
+
+
+def _axis_rotation(axis, angle):
+    x, y, z = axis
+    c, s = math.cos(angle), math.sin(angle)
+    t = 1.0 - c
+    return [
+        [t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+        [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+        [t * x * z - s * y, t * y * z + s * x, t * z * z + c],
+    ]
+
+
+# (origin xyz, origin rpy, axis) per joint, from braccio.urdf.xacro.
+URDF_CHAIN = [
+    ((0.0, 0.0, 0.01), (0.0, 0.0, 0.0), (0, 0, 1)),                      # base
+    ((0.0, -0.002, 0.072), (-math.pi / 2, 0.0, 0.0), (1, 0, 0)),         # shoulder
+    ((0.0, 0.0, 0.125), (-math.pi / 2, 0.0, 0.0), (1, 0, 0)),            # elbow
+    ((0.0, 0.0, 0.125), (-math.pi / 2, 0.0, 0.0), (1, 0, 0)),            # wrist_vertical
+    ((0.0, 0.0, 0.06), (0.0, 0.0, math.pi / 2), (0, 0, -1)),             # wrist_rotation
+]
+# world -> base_link fixed joint (yaw so that servo base=90 faces +x).
+URDF_BASE_ORIGIN = (0.0, 0.0, 0.02)
+URDF_BASE_YAW = -math.pi / 2
+
+
+def forward_kinematics(servo_degrees, tip=(0.0, 0.0, TIP_LENGTH)):
+    """World position of the fingertip for the five arm servos."""
+    rot = _rpy(0.0, 0.0, URDF_BASE_YAW)
+    pos = list(URDF_BASE_ORIGIN)
+    for (origin, rpy, axis), name, degrees in zip(
+        URDF_CHAIN, URDF_ARM_JOINTS, servo_degrees
+    ):
+        offset = _matvec(rot, origin)
+        pos = [pos[i] + offset[i] for i in range(3)]
+        rot = _matmul(_matmul(rot, _rpy(*rpy)), _axis_rotation(axis, servo_to_urdf(name, degrees)))
+    offset = _matvec(rot, tip)
+    return [pos[i] + offset[i] for i in range(3)]
+
+
+# --- inverse kinematics -----------------------------------------------------
+
+def _two_link(target_r: float, target_z: float):
+    """Elbow-up planar solution. Returns (shoulder_elev, forearm_elev) or None."""
+    dr = target_r - SHOULDER_RADIAL
+    dz = target_z - SHOULDER_HEIGHT
+    dist = math.hypot(dr, dz)
+    if dist > UPPER_ARM + FOREARM - 1e-4 or dist < abs(UPPER_ARM - FOREARM) + 1e-4:
+        return None
+    cos_bend = (dist * dist - UPPER_ARM ** 2 - FOREARM ** 2) / (2.0 * UPPER_ARM * FOREARM)
+    bend = math.acos(max(-1.0, min(1.0, cos_bend)))  # forearm relative to upper arm
+    shoulder = math.atan2(dz, dr) + math.atan2(
+        FOREARM * math.sin(bend), UPPER_ARM + FOREARM * math.cos(bend)
+    )
+    # elbow-up means the forearm points below the upper arm
+    return shoulder, shoulder - bend
+
+
+def solve_ik(x_m, y_m, z_m, gripper=GRIPPER_OPEN, wrist_rotation=90):
+    """Servo degrees that put the fingertip at ``(x, y, z)`` (world, metres).
+
+    The tool is kept as close to pointing straight down as the reach allows.
+    Returns ``None`` when the point cannot be reached within servo limits.
+    """
+    from unoq_braccio_driver.braccio_model import JOINT_LIMITS
+
+    radius = math.hypot(x_m, y_m)
+    base = 90.0 + math.degrees(math.atan2(y_m, x_m))
+
+    for pitch_deg in range(-90, -9, 5):
+        pitch = math.radians(pitch_deg)
+        wrist_r = radius - TOOL_LENGTH * math.cos(pitch)
+        wrist_z = z_m - TOOL_LENGTH * math.sin(pitch)
+        solution = _two_link(wrist_r, wrist_z)
+        if solution is None:
+            continue
+        shoulder_elev, forearm_elev = solution
+        servo = [
+            base,
+            180.0 - math.degrees(shoulder_elev),
+            90.0 - math.degrees(forearm_elev - shoulder_elev),
+            90.0 - math.degrees(pitch - forearm_elev),
+            float(wrist_rotation),
+        ]
+        names = URDF_ARM_JOINTS
+        if all(
+            JOINT_LIMITS[n].minimum <= v <= JOINT_LIMITS[n].maximum
+            for n, v in zip(names, servo)
+        ):
+            return [int(round(v)) for v in servo] + [int(gripper)]
+    return None

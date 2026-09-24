@@ -48,7 +48,7 @@
   <joint name="base_fixed" type="fixed">
     <parent link="world"/>
     <child link="base_link"/>
-    <origin xyz="0 0 0.02" rpy="0 0 0"/>
+    <origin xyz="0 0 0.02" rpy="0 0 -1.5708"/>
   </joint>
 
   <link name="braccio_base_link">
@@ -134,7 +134,7 @@
 
   <joint name="base" type="revolute">
     <axis xyz="0 0 1"/>
-    <limit effort="2" lower="-1.5708" upper="1.5708" velocity="1"/>
+    <limit effort="10" lower="-1.5708" upper="1.5708" velocity="2"/>
     <origin xyz="0 0 0.01" rpy="0 0 0"/>
     <parent link="base_link"/>
     <child link="braccio_base_link"/>
@@ -143,7 +143,7 @@
 
   <joint name="shoulder" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit effort="2" lower="-1.309" upper="1.309" velocity="1"/>
+    <limit effort="10" lower="0.2618" upper="2.8798" velocity="2"/>
     <origin xyz="0 -0.002 0.072" rpy="-1.5708 0 0"/>
     <parent link="braccio_base_link"/>
     <child link="shoulder_link"/>
@@ -152,7 +152,7 @@
 
   <joint name="elbow" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit effort="2" lower="-1.5708" upper="1.5708" velocity="1"/>
+    <limit effort="10" lower="0.0" upper="3.1416" velocity="2"/>
     <origin xyz="0 0 0.125" rpy="-1.5708 0 0"/>
     <parent link="shoulder_link"/>
     <child link="elbow_link"/>
@@ -161,7 +161,7 @@
 
   <joint name="wrist_vertical" type="revolute">
     <axis xyz="1 0 0"/>
-    <limit effort="1" lower="-1.5708" upper="1.5708" velocity="1"/>
+    <limit effort="10" lower="0.0" upper="3.1416" velocity="2"/>
     <origin xyz="0 0 0.125" rpy="-1.5708 0 0"/>
     <parent link="elbow_link"/>
     <child link="wrist_pitch_link"/>
@@ -170,7 +170,7 @@
 
   <joint name="wrist_rotation" type="revolute">
     <axis xyz="0 0 -1"/>
-    <limit effort="1" lower="-1.5708" upper="1.5708" velocity="1"/>
+    <limit effort="5" lower="-1.5708" upper="1.5708" velocity="2"/>
     <origin xyz="0 0 0.06" rpy="0 0 1.5708"/>
     <parent link="wrist_pitch_link"/>
     <child link="wrist_roll_link"/>
@@ -179,17 +179,17 @@
 
   <joint name="gripper" type="revolute">
     <axis xyz="0 -1 0"/>
-    <limit effort="1" lower="0.1750" upper="1.2741" velocity="1"/>
+    <limit effort="5" lower="0.1750" upper="1.2741" velocity="2"/>
     <origin xyz="0.010 0 0.03" rpy="0 -0.2967 0"/>
     <parent link="wrist_roll_link"/>
     <child link="right_gripper_link"/>
     <dynamics damping="0.1" friction="0.001"/>
   </joint>
 
-  <joint name="left_gripper_mimic" type="revolute">
+  <joint name="left_gripper" type="revolute">
     <axis xyz="0 1 0"/>
-    <mimic joint="gripper"/>
-    <limit effort="1" lower="1.2741" upper="2.3732" velocity="1"/>
+    <!-- Driven as 2.5482 - gripper by joint_trajectory_bridge (mirror of the right finger). -->
+    <limit effort="5" lower="1.2741" upper="2.3732" velocity="2"/>
     <origin xyz="-0.010 0 0.03" rpy="0 3.4383 0"/>
     <parent link="wrist_roll_link"/>
     <child link="left_gripper_link"/>
@@ -199,7 +199,7 @@
   <joint name="camera_mount" type="fixed">
     <parent link="wrist_roll_link"/>
     <child link="camera_link"/>
-    <origin xyz="0.03 0 0.055" rpy="0 0 0"/>
+    <origin xyz="0.03 0 0.055" rpy="0 -1.5708 0"/>
   </joint>
 
   <ros2_control name="GazeboSystem" type="system">
@@ -236,7 +236,41 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    <joint name="left_gripper">
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
   </ros2_control>
+
+  <!-- Servos hold their pose; do not let gravity sag the simulated arm. -->
+  <xacro:macro name="no_gravity" params="link">
+    <gazebo reference="${link}"><gravity>false</gravity></gazebo>
+  </xacro:macro>
+  <xacro:no_gravity link="braccio_base_link"/>
+  <xacro:no_gravity link="shoulder_link"/>
+  <xacro:no_gravity link="elbow_link"/>
+  <xacro:no_gravity link="wrist_pitch_link"/>
+  <xacro:no_gravity link="wrist_roll_link"/>
+  <xacro:no_gravity link="right_gripper_link"/>
+  <xacro:no_gravity link="left_gripper_link"/>
+  <xacro:no_gravity link="camera_link"/>
+
+  <!-- Gripper-mounted camera (matches the real Grove Vision AI on the gripper). -->
+  <gazebo reference="camera_link">
+    <sensor name="gripper_camera" type="camera">
+      <always_on>true</always_on>
+      <update_rate>15</update_rate>
+      <visualize>false</visualize>
+      <topic>gripper_camera/image_raw</topic>
+      <gz_frame_id>camera_link</gz_frame_id>
+      <camera>
+        <horizontal_fov>1.2</horizontal_fov>
+        <image><width>320</width><height>240</height><format>R8G8B8</format></image>
+        <clip><near>0.03</near><far>3.0</far></clip>
+      </camera>
+    </sensor>
+  </gazebo>
 
   <gazebo>
     <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">

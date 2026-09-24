@@ -33,6 +33,8 @@ setup(
             "joint_state_simulator = unoq_braccio_driver.joint_state_simulator:main",
             "joint_trajectory_bridge = unoq_braccio_driver.joint_trajectory_bridge:main",
             "ik_pose_demo = unoq_braccio_driver.ik_pose_demo:main",
+            "sim_cube_detector = unoq_braccio_driver.sim_cube_detector:main",
+            "pick_place_demo = unoq_braccio_driver.pick_place_demo:main",
         ],
     },
 )

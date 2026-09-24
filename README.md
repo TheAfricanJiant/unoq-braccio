@@ -8,7 +8,7 @@ and Gazebo.
 ROS 2 host -> tcp_bridge -> UNO Q agent -> servos
 
 <p align="center">
-  <img src="docs/IMG-20260615-WA0006.jpg" width="800">
+  <img src="docs/IMG-20260615-WA0006.png" width="800">
 </p>
 
 # Gazebo Simulator

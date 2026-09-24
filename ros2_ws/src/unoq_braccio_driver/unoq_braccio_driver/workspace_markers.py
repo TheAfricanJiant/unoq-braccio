@@ -62,10 +62,12 @@ class WorkspaceMarkers(Node):
         m.id = marker_id
         m.type = kind
         m.action = Marker.ADD
-        m.pose.position.x, m.pose.position.y, m.pose.position.z = x, y, z
+        # rclpy rejects ints in float fields, so everything is cast explicitly.
+        m.pose.position.x, m.pose.position.y, m.pose.position.z = float(x), float(y), float(z)
         m.pose.orientation.w = 1.0
-        m.scale.x, m.scale.y, m.scale.z = sx, sy, sz
-        m.color.r, m.color.g, m.color.b, m.color.a = (*rgb, alpha)
+        m.scale.x, m.scale.y, m.scale.z = float(sx), float(sy), float(sz)
+        m.color.r, m.color.g, m.color.b = (float(c) for c in rgb)
+        m.color.a = float(alpha)
         if text is not None:
             m.text = text
         return m
@@ -92,7 +94,7 @@ class WorkspaceMarkers(Node):
         add(self.marker(30, Marker.CUBE, cx, cy, cz, 0.04, 0.03, 0.02, (0.1, 0.1, 0.1)))
         # View axis down to the table.
         line = self.marker(31, Marker.LINE_LIST, 0, 0, 0, 0.002, 0, 0, (0.3, 0.6, 1.0), 0.6)
-        line.points = [Point(x=cx, y=cy, z=cz), Point(x=cx, y=cy, z=0.0)]
+        line.points = [Point(x=float(cx), y=float(cy), z=float(cz)), Point(x=float(cx), y=float(cy), z=0.0)]
         add(line)
 
         for i, cube in enumerate(self.cubes):

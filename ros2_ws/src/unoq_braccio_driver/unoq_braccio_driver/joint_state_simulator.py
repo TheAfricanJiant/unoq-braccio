@@ -37,9 +37,12 @@ def main() -> None:
     node = JointStateSimulator()
     try:
         rclpy.spin(node)
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
